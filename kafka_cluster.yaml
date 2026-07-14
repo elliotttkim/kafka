@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: 'Deploy a self-hosted Apache Kafka node on EC2 without AWS MSK'
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Select your existing VPC.
+    Default: vpc-07e022829414ef5ff
+
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Select the subnet where the EC2 instance will run.
+    Default: subnet-0ecf88f65097ebda8
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair to enable SSH access.
+    Default: ek-kafka-keypair
+
+  InstanceType:
+    Type: String
+    Default: t3.medium
+    Description: EC2 instance type for the Kafka node.
+
+Resources:
+  # Security Group to open Kafka ports
+  KafkaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow Kafka and SSH traffic
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0 # SSH access
+        - IpProtocol: tcp
+          FromPort: 9092
+          ToPort: 9092
+          CidrIp: 0.0.0.0/0 # Kafka client port
+        - IpProtocol: tcp
+          FromPort: 9093
+          ToPort: 9093
+          CidrIp: 0.0.0.0/0 # KRaft controller port
+
+  # EC2 Instance for Kafka
+  KafkaInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      NetworkInterfaces:
+        - DeviceIndex: 0
+          AssociatePublicIpAddress: true
+          SubnetId: !Ref SubnetId
+          GroupSet:
+            - !Ref KafkaSecurityGroup
+      ImageId: ami-002192a70217ac181 # Amazon Linux
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 50
+            VolumeType: gp3
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          sudo dnf update -y
+          sudo dnf install java-17-amazon-corretto-headless wget -y
+          cd /opt
+          sudo wget https://archive.apache.org/dist/kafka/3.9.0/kafka_2.13-3.9.0.tgz
+          sudo tar -xvzf kafka_2.13-3.9.0.tgz
+          cd kafka_2.13-3.9.0
+
+          # Start the Kafka environment
+          KAFKA_CLUSTER_ID="$(./bin/kafka-storage.sh random-uuid)"
+          sudo ./bin/kafka-storage.sh format -t "$KAFKA_CLUSTER_ID" -c ./config/kraft/server.properties
+
+          # Start Kafka server
+          sudo nohup ./bin/kafka-server-start.sh ./config/kraft/server.properties > ~/kafka_running.log 2>&1 &
+
+Outputs:
+  PublicIp:
+    Description: Public IP of the Kafka EC2 instance
+    Value: !GetAtt KafkaInstance.PublicIp
+  PrivateIp:
+    Description: Private IP of the Kafka EC2 instance
+    Value: !GetAtt KafkaInstance.PrivateIp
