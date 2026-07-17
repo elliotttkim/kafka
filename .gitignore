@@ -1,5 +1,8 @@
 # Ignore secret keys and local credentials
-keys/
+cfn/keys/
+
+# Ignore cdk .out directory
+cdk/.out/
 
 # macOS system files
 .DS_Store

@@ -22,6 +22,12 @@ Parameters:
     Default: t3.medium
     Description: EC2 instance type for the Kafka node.
 
+  MyIpCidr:
+    Type: String
+    Description: Your IP address in CIDR notation, for SSH and Kafka client access.
+    Default: 108.48.120.119/32
+    AllowedPattern: '^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$'
+
 Resources:
   # Security Group to open Kafka ports
   KafkaSecurityGroup:
@@ -33,15 +39,21 @@ Resources:
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          CidrIp: 0.0.0.0/0 # SSH access
+          CidrIp: !Ref MyIpCidr # SSH access
         - IpProtocol: tcp
           FromPort: 9092
           ToPort: 9092
-          CidrIp: 0.0.0.0/0 # Kafka client port
-        - IpProtocol: tcp
-          FromPort: 9093
-          ToPort: 9093
-          CidrIp: 0.0.0.0/0 # KRaft controller port
+          CidrIp: !Ref MyIpCidr # Kafka client port
+
+  # Cluster-internal KRaft controller port
+  KafkaControllerIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref KafkaSecurityGroup
+      IpProtocol: tcp
+      FromPort: 9093
+      ToPort: 9093
+      SourceSecurityGroupId: !Ref KafkaSecurityGroup
 
   # EC2 Instance for Kafka
   KafkaInstance:
@@ -76,7 +88,7 @@ Resources:
           sudo ./bin/kafka-storage.sh format -t "$KAFKA_CLUSTER_ID" -c ./config/kraft/server.properties
 
           # Start Kafka server
-          sudo nohup ./bin/kafka-server-start.sh ./config/kraft/server.properties > ~/kafka_running.log 2>&1 &
+          sudo nohup ./bin/kafka-server-start.sh ./config/kraft/server.properties > /home/ec2-user/kafka_running.log 2>&1 &
 
 Outputs:
   PublicIp:
